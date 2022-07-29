@@ -1,0 +1,54 @@
+name: pytest
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    name: "pytest"
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+
+    steps:
+      - name: Install system packages
+        run: |
+          dnf --setopt install_weak_deps=False install -y \
+            git-core \
+            gcc \
+            python3-devel \
+            openssl-devel \
+            intltool \
+            dbus-devel \
+            glib2-devel \
+            python3-rpm \
+            python3-librepo \
+            libnl3-devel \
+            python3-pip \
+            python3-setuptools \
+            python3-gobject
+          dnf --setopt install_weak_deps=False install -y \
+            langpacks-de \ 
+            langpacks-ja
+
+      - uses: actions/checkout@v3
+
+      - name: Install Python packages
+        run: |
+          pip install wheel
+          pip install \
+            iniparse \
+            requests \
+            ethtool \
+            dbus-python
+          pip install -r test-requirements.txt
+
+      - name: Build the code
+        run: |
+          python3 ./setup.py build
+          python3 ./setup.py build_ext --inplace
+
+      - name: pytest
+        run: |
+          pytest
