@@ -5,34 +5,50 @@ on:
   workflow_dispatch:
 
 jobs:
-  stylish:
-    name: "black & flake8 & rpmlint"
+  check-spec:
+    name: rpmlint
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
 
     steps:
-    - name: Base setup
-      run: |
-        dnf --setopt install_weak_deps=False install -y \
-            git-core \
-            python3-flake8 \
-            python3-pip \
-            rpmlint
+      - name: Install packages
+        run: |
+          dnf --setopt instal_week_deps=False install -y git-core rpmlint
 
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-    - uses: psf/black@stable
-      with:
-        version: "22.3.0"
+      - name: Run rpmlint
+        run: |
+          rpmlint subscription-manager.spec
 
-    - name: Setup flake8 annotations
-      uses: rbialon/flake8-annotations@v1
+  check-python:
+    name: "black & flake8"
+    runs-on: ubuntu-latest
 
-    - name: Run flake8
-      run: |
-        flake8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11-dev"]
 
-    - name: Run rpmlint
-      run: |
-        rpmlint subscription-manager.spec
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install packages
+        run: |
+          python3 -m pip install --upgrade pip wheel
+          python3 -m pip install -r test-requirements.txt
+
+      - name: Run Black
+        run: |
+          black . --diff
+
+      - name: Run flake8
+        run: |
+          flake8 . --count --statistics
