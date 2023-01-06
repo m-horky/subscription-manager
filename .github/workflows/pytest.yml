@@ -16,10 +16,17 @@ jobs:
           # - image: "quay.io/centos/centos:stream8"
           - image: "quay.io/centos/centos:stream9"
             crb: true
+            pytest_args: '--deselect test/rhsmlib/facts/test_hwprobe.py::HardwareProbeTest::test_networkinfo'
+            # The 'test_networkinfo' breaks in CentOS container because it has IPv6 disabled.
+            # Because of a bug in Python, collecting 'socket.AF_INET6' via 'socket.getaddrinfo()' causes
+            # segfaults instead of exceptions. This deselect is a workaround until it is fixed or until
+            # we switch to a different way of collecting network facts.
           - image: "fedora:latest"
             crb: false
+            pytest_args: ''
           - image: "fedora:rawhide"
             crb: false
+            pytest_args: ''
 
     runs-on: ubuntu-latest
     container:
@@ -65,6 +72,7 @@ jobs:
 
       - name: "Run pytest"
         env:
-          PYTEST_ADDOPTS: "--color=yes"
+          PYTEST_ADDOPTS: "--color=yes --code-highlight=yes --showlocals"
         run: |
-          SUBMAN_TEST_IN_CONTAINER=1 dbus-run-session python3 -m pytest -l
+          SUBMAN_TEST_IN_CONTAINER=1 dbus-run-session \
+            python3 -m pytest ${{ matrix.pytest_args }}
