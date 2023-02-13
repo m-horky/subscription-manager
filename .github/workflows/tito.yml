@@ -1,0 +1,95 @@
+name: tito
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tito:
+    name: "tito"
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "CentOS Stream 9"
+            image: "quay.io/centos/centos:stream9"
+          - name: "Fedora latest"
+            image: "fedora:latest"
+          - name: "Fedora Rawhide"
+            image: "fedora:rawhide"
+
+    runs-on: ubuntu-latest
+    container:
+      image: ${{ matrix.image }}
+      volumes:
+        - /tmp:/tmp
+
+    steps:
+      - name: Install core packages
+        run: |
+          dnf --setopt install_weak_deps=False install -y \
+            git-core dnf-plugins-core rpm-build sudo
+
+      - name: Enable CRB repository
+        if: ${{ matrix.name == 'CentOS Stream 9' }}
+        run: |
+          dnf config-manager --enable crb
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        #with:
+        #  fetch-depth: 0
+
+      # This step is required so Tito can properly read git history
+      # See https://github.com/actions/checkout/issues/766
+      - name: Fix git repository path
+        run: |
+          git config --global --add safe.directory '*'
+
+      # 'python3_pkgversion' is being set dynamically at build time, but
+      #  builddep does not know how to handle it. This step defines it as '3'
+      #  on the first line of the .spec file, allowing us to get dependencies.
+      - name: Fix content of .spec file
+        run: |
+          sed -i '1s/^/%global python3_pkgversion 3\n/' subscription-manager.spec
+
+      - name: Install packages
+        run: |
+          dnf --setopt install_weak_deps=False install -y \
+            npm
+          dnf --setopt install_weak_deps=False builddep -y \
+            subscription-manager.spec
+
+      - name: Install tito (using DNF)
+        if: ${{ startsWith(matrix.name, 'Fedora') }}
+        run: |
+          dnf --setopt install_weak_deps=False install -y \
+            tito
+
+      - name: Install tito (using pip)
+        if: ${{ startsWith(matrix.name, 'CentOS') }}
+        run: |
+          dnf --setopt install_weak_deps=False install -y \
+            python3-pip python3-setuptools
+          pip install https://github.com/rpm-software-management/tito/archive/refs/tags/tito-0.6.20-1.tar.gz
+
+      - name: Prepare directories
+        run: |
+          NAME="${{ matrix.name }}"
+          DIRNAME="${NAME// /-}"
+          echo "DIRNAME=$DIRNAME" >> $GITHUB_ENV
+          mkdir "/tmp/tito-$DIRNAME"
+
+      - name: Build the package
+        run: |
+          mkdir "/tmp/tito-${{ matrix.name }}"
+          tito build --output="/tmp/tito-${{ env.DIRNAME }}" --test --rpm
+          tar --create --file="/tmp/tito-${{ env.DIRNAME }}.tar" --directory="/tmp/tito-${{ env.DIRNAME }}/" .
+
+      - name: Upload RPMs
+        uses: actions/upload-artifact@v3
+        with:
+          name: RPMs from tito (${{ matrix.name }})
+          path: /tmp/tito-${{ env.DIRNAME }}.tar
+          retention-days: 7
